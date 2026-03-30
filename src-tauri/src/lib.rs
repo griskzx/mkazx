@@ -5,12 +5,6 @@ use core::*;
 use pg::*;
 use tauri::{AppHandle, Manager};
 
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
-
 // ==================== 暴露给前端的 Commands ====================
 #[tauri::command]
 fn generate_password_cmd(length: usize, types: Vec<String>) -> Result<String, String> {
@@ -26,27 +20,6 @@ fn generate_password_cmd(length: usize, types: Vec<String>) -> Result<String, St
     pg::generate_password(length, &char_types)
 }
 
-#[tauri::command]
-async fn save_vault_cmd(
-    app: AppHandle,
-    master_password: String,
-    accounts: Vec<Account>,   // 前端传整个列表
-) -> Result<(), String> {
-    let vault = Vault { items: accounts };
-    let path = get_vault_path(&app);   // 建议用 app data 目录
-    save_vault(&path, &vault, &master_password)
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-async fn load_vault_cmd(
-    app: AppHandle,
-    master_password: String,
-) -> Result<Vault, String> {
-    let path = get_vault_path(&app);
-    load_vault(&path, &master_password)
-        .map_err(|e| e.to_string())
-}
 
 // ==================== 主密码相关命令 ====================
 
@@ -217,10 +190,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
-            greet,
             generate_password_cmd,
-            save_vault_cmd,
-            load_vault_cmd,
             is_vault_exists,
             setup_master_password,
             unlock_vault,
