@@ -452,13 +452,20 @@ function App() {
                 />
               </div>
               <div className="form-group">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'bottom' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
                   <label>密码</label>
                   <span 
                     style={{ fontSize: '12px', color: 'var(--accent)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
                     onClick={async () => {
+                      const selTypes = [];
+                      if (genTypes.lower) selTypes.push("lower");
+                      if (genTypes.upper) selTypes.push("upper");
+                      if (genTypes.digit) selTypes.push("digit");
+                      if (genTypes.special) selTypes.push("special");
+                      if (selTypes.length === 0) return alert("至少选择一种字符类型");
+                      
                       try {
-                        const pwd = await invoke<string>('generate_password_cmd', { length: 16, types: ["lower", "upper", "digit", "special"] });
+                        const pwd = await invoke<string>('generate_password_cmd', { length: 16, types: selTypes });
                         setForm({...form, password: pwd});
                         setVisiblePasswords(p => ({ ...p, [-1]: true })); // 自动显示明文以供查看
                       } catch (e) {
@@ -466,7 +473,7 @@ function App() {
                       }
                     }}
                   >
-                    <Dices size={14} /> 生成随机密码
+                    <Dices size={14} /> 根据下方选项生成
                   </span>
                 </div>
                 <div style={{ display: 'flex', gap: '8px' }}>
@@ -479,6 +486,20 @@ function App() {
                   <button className="secondary" style={{ padding: '0 12px' }} onClick={() => setVisiblePasswords(p => ({ ...p, [-1]: !p[-1] }))}>
                     {visiblePasswords[-1] ? <EyeOff size={18} /> : <Eye size={18} />}
                   </button>
+                </div>
+                <div style={{ display: 'flex', gap: '12px', fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={genTypes.upper} onChange={e => setGenTypes({...genTypes, upper: e.target.checked})} style={{ width: '13px', margin: 0 }}/> 大写
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={genTypes.lower} onChange={e => setGenTypes({...genTypes, lower: e.target.checked})} style={{ width: '13px', margin: 0 }}/> 小写
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={genTypes.digit} onChange={e => setGenTypes({...genTypes, digit: e.target.checked})} style={{ width: '13px', margin: 0 }}/> 数字
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={genTypes.special} onChange={e => setGenTypes({...genTypes, special: e.target.checked})} style={{ width: '13px', margin: 0 }}/> 特殊符号
+                  </label>
                 </div>
               </div>
               <div className="form-group">
