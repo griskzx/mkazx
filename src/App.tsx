@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { 
   Lock, Unlock, ShieldCheck, Search, Plus, Key, 
-  Eye, EyeOff, Copy, Edit2, Trash2, Globe, Server, User, LayoutGrid
+  Eye, EyeOff, Copy, Edit2, Trash2, Globe, Server, User, LayoutGrid, Dices
 } from 'lucide-react';
 import type { Account } from './types';
 
@@ -12,8 +12,8 @@ import type { Account } from './types';
 const getIconForType = (type: string) => {
   const t = type.toLowerCase();
   if (t.includes('web') || t.includes('http') || t.includes('网站')) return <Globe size={20} />;
-  if (t.includes('服务器') || t.includes('server') || t.includes('ssh')) return <Server size={20} />;
-  if (t.includes('qq') || t.includes('wx') || t.includes('wechat')) return <User size={20} />;
+  if (t.includes('服务器') || t.includes('server') || t.includes('ssh') || t.includes('云')) return <Server size={20} />;
+  if (t.includes('qq') || t.includes('wx') || t.includes('wechat') || t.includes('微信')) return <User size={20} />;
   return <LayoutGrid size={20} />;
 };
 
@@ -27,6 +27,7 @@ function App() {
   // 账号相关
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeCategory, setActiveCategory] = useState<'all' | 'web' | 'server'>('all');
   const [loading, setLoading] = useState(false);
 
   // 弹窗状态
@@ -34,48 +35,70 @@ function App() {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [form, setForm] = useState<Account>({ accountType: '', username: '', password: '', remark: '' });
 
-  // 密码可见性管理 (key: index, value: boolean)
+  // 密码生成器状态
+  const [showGenModal, setShowGenModal] = useState(false);
+  const [genLength, setGenLength] = useState(12);
+  const [genTypes, setGenTypes] = useState({ lower: true, upper: true, digit: true, special: true });
+  const [generatedPwd, setGeneratedPwd] = useState("");
+
+  // 密码可见性管理
   const [visiblePasswords, setVisiblePasswords] = useState<Record<number, boolean>>({});
 
-  // 检查是否已有 vault
+  // 初始化检查
   useEffect(() => {
     invoke<boolean>('is_vault_exists').then((exists) => {
       setStep(exists ? 'unlock' : 'setup');
     }).catch(console.error);
   }, []);
 
-  // 加载 / 搜索账号
-  const fetchAccounts = async (query?: string) => {
+  // 本地请求所有数据 (不再调用后端的 search_accounts，全靠前端本地高速过滤解决双词与(AND)的问题)
+  const fetchAccounts = async () => {
     if (!masterPassword) return;
     setLoading(true);
     setError('');
     try {
-      if (query && query.trim() !== '') {
-        const result = await invoke<Account[]>('search_accounts', {
-          masterPassword,
-          accountType: query.trim(),
-          username: query.trim(),
-        });
-        setAccounts(result);
-      } else {
-        const vault = await invoke<{ items: Account[] }>('get_all_accounts', { masterPassword });
-        setAccounts(vault.items);
-      }
+      const vault = await invoke<{ items: Account[] }>('get_all_accounts', { masterPassword });
+      setAccounts(vault.items);
     } catch (e: any) {
       console.error(e);
-      // 如果搜索失败或者加载失败
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (step === 'main') fetchAccounts(searchQuery);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [searchQuery, step]);
+    if (step === 'main') fetchAccounts();
+  }, [step]); // 解锁后只请求一次全量数据
 
+  // 本地计算属性：根据分类与搜索实时过滤卡片
+  const filteredAccounts = useMemo(() => {
+    let list = accounts;
+    
+    // 侧边栏分类过滤
+    if (activeCategory === 'web') {
+      list = list.filter(a => {
+        const t = a.accountType.toLowerCase();
+        return t.includes('web') || t.includes('http') || t.includes('网站');
+      });
+    } else if (activeCategory === 'server') {
+      list = list.filter(a => {
+        const t = a.accountType.toLowerCase();
+        return t.includes('server') || t.includes('ssh') || t.includes('服务器') || t.includes('云');
+      });
+    }
+
+    // 搜索框过滤（账户类型与用户名满足其一即可 -> OR 逻辑）
+    if (searchQuery.trim() !== '') {
+      const q = searchQuery.toLowerCase();
+      list = list.filter(a => 
+        a.accountType.toLowerCase().includes(q) || 
+        a.username.toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [accounts, activeCategory, searchQuery]);
+
+  // Auth 操作
   const handleSetup = async (e: React.FormEvent) => {
     e.preventDefault();
     if (masterPassword !== confirmPassword) return setError('两次输入的密码不一致');
@@ -101,11 +124,11 @@ function App() {
     }
   };
 
+  // CRUD
   const handleSaveAccount = async () => {
     if (!form.accountType || !form.username || !form.password) {
       return alert("类型、账号和密码为必填项！");
     }
-    
     try {
       if (editingIndex !== null) {
         await invoke('update_account', { masterPassword, index: editingIndex, updatedAccount: form });
@@ -114,19 +137,42 @@ function App() {
       }
       setShowModal(false);
       resetForm();
-      fetchAccounts(searchQuery);
+      fetchAccounts(); // 重新拉取
     } catch (e: any) {
       alert('保存失败: ' + e);
     }
   };
 
   const handleDelete = async (index: number) => {
+    // Note: To map filtered items back to real index, find index in original array
+    const realAcc = filteredAccounts[index];
+    const realIndex = accounts.findIndex(a => a === realAcc);
+    
+    if (realIndex === -1) return;
     if (!confirm('确定要删除这条凭证吗？此操作不可逆。')) return;
     try {
-      await invoke('delete_account', { masterPassword, index });
-      fetchAccounts(searchQuery);
+      await invoke('delete_account', { masterPassword, index: realIndex });
+      fetchAccounts();
     } catch (e: any) {
       alert('删除失败: ' + e);
+    }
+  };
+
+  // 生成密码
+  const handleGeneratePwd = async () => {
+    try {
+      const types = [];
+      if (genTypes.lower) types.push("lower");
+      if (genTypes.upper) types.push("upper");
+      if (genTypes.digit) types.push("digit");
+      if (genTypes.special) types.push("special");
+      
+      if (types.length === 0) return alert("至少选择一种字符类型");
+      
+      const pwd = await invoke<string>('generate_password_cmd', { length: genLength, types });
+      setGeneratedPwd(pwd);
+    } catch (e: any) {
+      alert("生成失败: " + e);
     }
   };
 
@@ -135,25 +181,10 @@ function App() {
     setEditingIndex(null);
   };
 
-  const openAdd = () => {
-    resetForm();
-    setShowModal(true);
-  };
-
-  const openEdit = (acc: Account, index: number) => {
-    setForm(acc);
-    setEditingIndex(index);
-    setShowModal(true);
-  };
-
-  const togglePassword = (idx: number) => {
-    setVisiblePasswords(prev => ({ ...prev, [idx]: !prev[idx] }));
-  };
-
   const copyToClipboard = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      setSuccess("已复制到剪贴板");
+      setSuccess("已复制到剪贴板！");
       setTimeout(() => setSuccess(""), 2000);
     } catch (e) {
       console.error(e);
@@ -161,11 +192,79 @@ function App() {
   };
 
   // =====================
+  // 密码生成器 弹窗组件
+  // =====================
+  const renderGenModal = () => {
+    if (!showGenModal) return null;
+    return (
+      <div className="modal-backdrop" style={{ zIndex: 2000 }}>
+        <div className="modal-content glass-panel" style={{ width: '400px' }}>
+          <div className="modal-header">
+            <h3>随机密码生成器</h3>
+            <button className="icon-btn" onClick={() => setShowGenModal(false)}><Plus size={24} style={{ transform: 'rotate(45deg)' }}/></button>
+          </div>
+          <div className="flex-col">
+            <div className="password-box" style={{ justifyContent: 'center', height: '60px', fontSize: '18px' }}>
+               {generatedPwd || <span style={{ color: 'var(--text-secondary)' }}>点击下方生成按钮</span>}
+            </div>
+            {generatedPwd && (
+               <button className="secondary" onClick={() => copyToClipboard(generatedPwd)} style={{ marginTop: '-8px' }}>
+                 <Copy size={16} /> 复制大密码
+               </button>
+            )}
+
+            <div className="form-group" style={{ marginTop: '10px' }}>
+              <label>密码长度: {genLength}位</label>
+              <input 
+                 type="range" min="6" max="16" value={genLength} 
+                 onChange={e => setGenLength(parseInt(e.target.value))} 
+                 style={{ padding: '0', cursor: 'pointer', height: '4px', background: 'var(--accent)' }}
+              />
+            </div>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                <input type="checkbox" checked={genTypes.upper} onChange={e => setGenTypes({...genTypes, upper: e.target.checked})} style={{ width: '18px' }}/> 大写字母
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                <input type="checkbox" checked={genTypes.lower} onChange={e => setGenTypes({...genTypes, lower: e.target.checked})} style={{ width: '18px' }}/> 小写字母
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                <input type="checkbox" checked={genTypes.digit} onChange={e => setGenTypes({...genTypes, digit: e.target.checked})} style={{ width: '18px' }}/> 数字 0-9
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                <input type="checkbox" checked={genTypes.special} onChange={e => setGenTypes({...genTypes, special: e.target.checked})} style={{ width: '18px' }}/> 特殊符号
+              </label>
+            </div>
+
+            <button onClick={handleGeneratePwd} style={{ marginTop: '10px', height: '44px', fontWeight: 'bold' }}>
+              <Dices size={18} /> 随机生成
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+
+  // =====================
   // 渲染 Auth 界面
   // =====================
   if (step === 'setup' || step === 'unlock') {
     return (
       <div className="auth-container">
+        {renderGenModal()}
+        {success && <div style={{ position: 'absolute', top: 30, background: 'var(--success)', color: '#fff', padding: '10px 20px', borderRadius: '8px' }}>{success}</div>}
+        
+        {/* 未解锁时即可使用的生成器入口 */}
+        <button 
+           className="secondary" 
+           style={{ position: 'absolute', top: 30, right: 30, background: 'var(--bg-card)' }}
+           onClick={() => { setGeneratedPwd(""); setShowGenModal(true); }}
+        >
+          <Dices size={16} /> 随机密码生成器
+        </button>
+
         <div className="auth-bg-glow" />
         <div className="auth-card glass-panel">
           <div className="auth-icon">
@@ -175,7 +274,7 @@ function App() {
             {step === 'setup' ? '初始化保险箱' : '解锁 mkazx'}
           </h1>
           <p className="auth-subtitle">
-            {step === 'setup' ? '设置强主密码以加密您的所有凭证数据' : '请输入您的主密码进行验证'}
+            {step === 'setup' ? '设置强主密码以加密您的所有凭证数据' : '请输入您的主密码 (或者尝试点右上角生成密码)'}
           </p>
           
           <form onSubmit={step === 'setup' ? handleSetup : handleUnlock} className="flex-col">
@@ -210,6 +309,8 @@ function App() {
   // =====================
   return (
     <div className="dashboard-layout">
+      {renderGenModal()}
+
       {/* Sidebar */}
       <div className="sidebar">
         <div className="sidebar-header">
@@ -217,18 +318,21 @@ function App() {
           <span>mkazx Vault</span>
         </div>
         <div className="sidebar-content">
-          <div className="nav-item active">
+          <div className={`nav-item ${activeCategory === 'all' ? 'active' : ''}`} onClick={() => setActiveCategory('all')}>
             <Key size={18} /> 全部凭证
           </div>
-          <div className="nav-item">
+          <div className={`nav-item ${activeCategory === 'web' ? 'active' : ''}`} onClick={() => setActiveCategory('web')}>
             <Globe size={18} /> 网站登录
           </div>
-          <div className="nav-item">
+          <div className={`nav-item ${activeCategory === 'server' ? 'active' : ''}`} onClick={() => setActiveCategory('server')}>
             <Server size={18} /> 服务器/SSH
           </div>
         </div>
-        <div className="sidebar-footer">
-          <button className="secondary" style={{ width: '100%' }} onClick={() => setStep('unlock')}>
+        <div className="sidebar-footer" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <button className="secondary" style={{ width: '100%' }} onClick={() => { setGeneratedPwd(""); setShowGenModal(true); }}>
+             <Dices size={18} /> 生成密码
+          </button>
+          <button className="secondary" style={{ width: '100%', borderColor: 'transparent', color: 'var(--text-secondary)' }} onClick={() => setStep('unlock')}>
              锁定并退出
           </button>
         </div>
@@ -241,31 +345,34 @@ function App() {
             <Search size={18} color="var(--text-secondary)" />
             <input 
               type="text" 
-              placeholder="搜索账号或类型..." 
+              placeholder="搜索账号或类型（实时匹配）..." 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
           </div>
           <div className="header-actions">
             {success && <span className="text-success" style={{ margin: 0 }}>{success}</span>}
-            <button onClick={openAdd}>
+            <button onClick={() => { resetForm(); setShowModal(true); }}>
               <Plus size={18} /> 添加凭证
             </button>
           </div>
         </div>
 
         <div className="accounts-grid">
-          {accounts.length === 0 && !loading && (
+          {filteredAccounts.length === 0 && !loading && (
             <div className="empty-state">
               <Search />
-              <p>没有找到任何记录，点击右上角添加。</p>
+              <p>没有找到任何符合的记录，请尝试更改搜索词或分类。</p>
             </div>
           )}
 
-          {accounts.map((acc, idx) => {
-            const isVisible = !!visiblePasswords[idx];
+          {filteredAccounts.map((acc, renderIdx) => {
+            // Fetch real index mapped to total accounts array for visibility toggle uniqueness
+            const globalIdx = accounts.findIndex(a => a === acc);
+            const isVisible = !!visiblePasswords[globalIdx];
+
             return (
-              <div className="account-card glass-panel" key={idx}>
+              <div className="account-card glass-panel" key={globalIdx}>
                 <div className="account-card-header">
                   <div className="account-info">
                     <div className="account-type">
@@ -275,8 +382,13 @@ function App() {
                     <div className="account-username">{acc.username}</div>
                   </div>
                   <div className="account-actions">
-                    <button className="icon-btn" onClick={() => openEdit(acc, idx)} title="编辑"><Edit2 size={16} /></button>
-                    <button className="icon-btn" onClick={() => handleDelete(idx)} title="删除"><Trash2 size={16} /></button>
+                    <button className="icon-btn" onClick={() => {
+                        setForm(acc);
+                        // Save the real index matching the original raw array
+                        setEditingIndex(globalIdx);
+                        setShowModal(true);
+                      }} title="编辑"><Edit2 size={16} /></button>
+                    <button className="icon-btn" onClick={() => handleDelete(renderIdx)} title="删除"><Trash2 size={16} /></button>
                   </div>
                 </div>
 
@@ -285,7 +397,7 @@ function App() {
                     {isVisible ? acc.password : "••••••••"}
                   </span>
                   <div style={{ display: 'flex', gap: '4px' }}>
-                    <button className="icon-btn" onClick={() => togglePassword(idx)} title={isVisible ? "隐藏" : "显示"}>
+                    <button className="icon-btn" onClick={() => setVisiblePasswords(p => ({ ...p, [globalIdx]: !p[globalIdx] }))} title={isVisible ? "隐藏" : "显示"}>
                       {isVisible ? <EyeOff size={16} /> : <Eye size={16} />}
                     </button>
                     <button className="icon-btn" onClick={() => copyToClipboard(acc.password)} title="复制密码">
@@ -341,7 +453,7 @@ function App() {
                     value={form.password} 
                     onChange={e => setForm({...form, password: e.target.value})} 
                   />
-                  <button className="secondary" style={{ padding: '0 12px' }} onClick={() => togglePassword(-1)}>
+                  <button className="secondary" style={{ padding: '0 12px' }} onClick={() => setVisiblePasswords(p => ({ ...p, [-1]: !p[-1] }))}>
                     {visiblePasswords[-1] ? <EyeOff size={18} /> : <Eye size={18} />}
                   </button>
                 </div>
