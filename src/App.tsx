@@ -1,21 +1,12 @@
 import { useState, useEffect, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { 
-  Lock, Unlock, ShieldCheck, Search, Plus, Key, 
-  Eye, EyeOff, Copy, Edit2, Trash2, Globe, Server, User, LayoutGrid, Dices
-} from 'lucide-react';
+import { Lock, Unlock, ShieldCheck, Search, Plus, Key, Globe, Server, Dices } from 'lucide-react';
 import type { Account } from './types';
 
-// ========================
-// 辅助图标映射组件
-// ========================
-const getIconForType = (type: string) => {
-  const t = type.toLowerCase();
-  if (t.includes('web') || t.includes('http') || t.includes('网站')) return <Globe size={20} />;
-  if (t.includes('服务器') || t.includes('server') || t.includes('ssh') || t.includes('云')) return <Server size={20} />;
-  if (t.includes('qq') || t.includes('wx') || t.includes('wechat') || t.includes('微信')) return <User size={20} />;
-  return <LayoutGrid size={20} />;
-};
+import { Dialog } from './components/Dialog';
+import { PasswordGeneratorModal } from './components/PasswordGeneratorModal';
+import { AccountCard } from './components/AccountCard';
+import { AccountModal } from './components/AccountModal';
 
 function App() {
   const [step, setStep] = useState<'setup' | 'unlock' | 'main'>('unlock');
@@ -40,10 +31,6 @@ function App() {
   const [genLength, setGenLength] = useState(12);
   const [genTypes, setGenTypes] = useState({ lower: true, upper: true, digit: true, special: true });
   const [generatedPwd, setGeneratedPwd] = useState("");
-
-  // 密码可见性与备注展开管理
-  const [visiblePasswords, setVisiblePasswords] = useState<Record<number, boolean>>({});
-  const [expandedRemarks, setExpandedRemarks] = useState<Record<number, boolean>>({});
 
   // 全局对话框状态
   const [dialog, setDialog] = useState<{show: boolean, type: 'alert' | 'confirm', message: string, onConfirm?: () => void}>({show: false, type: 'alert', message: ''});
@@ -161,24 +148,6 @@ function App() {
     });
   };
 
-  // 生成密码
-  const handleGeneratePwd = async () => {
-    try {
-      const types = [];
-      if (genTypes.lower) types.push("lower");
-      if (genTypes.upper) types.push("upper");
-      if (genTypes.digit) types.push("digit");
-      if (genTypes.special) types.push("special");
-      
-      if (types.length === 0) return showAlert("至少得选择一种字符类型吧？");
-      
-      const pwd = await invoke<string>('generate_password_cmd', { length: genLength, types });
-      setGeneratedPwd(pwd);
-    } catch (e: any) {
-      showAlert("生成失败: " + e);
-    }
-  };
-
   const resetForm = () => {
     setForm({ accountType: '', username: '', password: '', remark: '' });
     setEditingIndex(null);
@@ -195,96 +164,19 @@ function App() {
   };
 
   // =====================
-  // 自定义对话框组件
-  // =====================
-  const renderDialog = () => {
-    if (!dialog.show) return null;
-    return (
-      <div className="modal-backdrop" style={{ zIndex: 3000 }}>
-        <div className="modal-content glass-panel" style={{ width: '380px', padding: '30px 24px', textAlign: 'center' }}>
-          <div style={{ marginBottom: '24px', fontSize: '15px', color: 'var(--text-primary)', lineHeight: 1.5 }}>
-            {dialog.message}
-          </div>
-          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-            {dialog.type === 'confirm' && (
-              <button className="secondary flex-1" onClick={() => setDialog({ ...dialog, show: false })}>取消</button>
-            )}
-            <button className={dialog.type === 'confirm' ? "danger flex-1" : "flex-1"} onClick={() => {
-              setDialog({ ...dialog, show: false });
-              if (dialog.onConfirm) dialog.onConfirm();
-            }}>
-              确定
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  // =====================
-  // 密码生成器 弹窗组件
-  // =====================
-  const renderGenModal = () => {
-    if (!showGenModal) return null;
-    return (
-      <div className="modal-backdrop" style={{ zIndex: 2000 }}>
-        <div className="modal-content glass-panel" style={{ width: '400px' }}>
-          <div className="modal-header">
-            <h3>随机密码生成器</h3>
-            <button className="icon-btn" onClick={() => setShowGenModal(false)}><Plus size={24} style={{ transform: 'rotate(45deg)' }}/></button>
-          </div>
-          <div className="flex-col">
-            <div className="password-box" style={{ justifyContent: 'center', height: '60px', fontSize: '18px' }}>
-               {generatedPwd || <span style={{ color: 'var(--text-secondary)' }}>点击下方生成按钮</span>}
-            </div>
-            {generatedPwd && (
-               <button className="secondary" onClick={() => copyToClipboard(generatedPwd)} style={{ marginTop: '-8px' }}>
-                 <Copy size={16} /> 复制密码
-               </button>
-            )}
-
-            <div className="form-group" style={{ marginTop: '10px' }}>
-              <label>密码长度: {genLength}位</label>
-              <input 
-                 type="range" min="6" max="16" value={genLength} 
-                 onChange={e => setGenLength(parseInt(e.target.value))} 
-                 style={{ padding: '0', cursor: 'pointer', height: '4px', background: 'var(--accent)' }}
-              />
-            </div>
-            
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                <input type="checkbox" checked={genTypes.upper} onChange={e => setGenTypes({...genTypes, upper: e.target.checked})} style={{ width: '18px' }}/> 大写字母
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                <input type="checkbox" checked={genTypes.lower} onChange={e => setGenTypes({...genTypes, lower: e.target.checked})} style={{ width: '18px' }}/> 小写字母
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                <input type="checkbox" checked={genTypes.digit} onChange={e => setGenTypes({...genTypes, digit: e.target.checked})} style={{ width: '18px' }}/> 数字 0-9
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                <input type="checkbox" checked={genTypes.special} onChange={e => setGenTypes({...genTypes, special: e.target.checked})} style={{ width: '18px' }}/> 特殊符号
-              </label>
-            </div>
-
-            <button onClick={handleGeneratePwd} style={{ marginTop: '10px', height: '44px', fontWeight: 'bold' }}>
-              <Dices size={18} /> 随机生成
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-
-  // =====================
   // 渲染 Auth 界面
   // =====================
   if (step === 'setup' || step === 'unlock') {
     return (
       <div className="auth-container">
-        {renderDialog()}
-        {renderGenModal()}
+        <Dialog dialog={dialog} setDialog={setDialog} />
+        <PasswordGeneratorModal 
+           show={showGenModal} onClose={() => setShowGenModal(false)}
+           genLength={genLength} setGenLength={setGenLength}
+           genTypes={genTypes} setGenTypes={setGenTypes}
+           generatedPwd={generatedPwd} setGeneratedPwd={setGeneratedPwd}
+           copyToClipboard={copyToClipboard} showAlert={showAlert}
+        />
         {success && <div style={{ position: 'absolute', top: 30, background: 'var(--success)', color: '#fff', padding: '10px 20px', borderRadius: '8px' }}>{success}</div>}
         
         <button 
@@ -339,8 +231,20 @@ function App() {
   // =====================
   return (
     <div className="dashboard-layout">
-      {renderDialog()}
-      {renderGenModal()}
+      <Dialog dialog={dialog} setDialog={setDialog} />
+      <PasswordGeneratorModal 
+         show={showGenModal} onClose={() => setShowGenModal(false)}
+         genLength={genLength} setGenLength={setGenLength}
+         genTypes={genTypes} setGenTypes={setGenTypes}
+         generatedPwd={generatedPwd} setGeneratedPwd={setGeneratedPwd}
+         copyToClipboard={copyToClipboard} showAlert={showAlert}
+      />
+      <AccountModal 
+         show={showModal} onClose={() => setShowModal(false)}
+         form={form} setForm={setForm} isEditing={editingIndex !== null}
+         onSave={handleSaveAccount} showAlert={showAlert}
+         genTypes={genTypes} setGenTypes={setGenTypes}
+      />
 
       {/* Sidebar */}
       <div className="sidebar">
@@ -399,152 +303,22 @@ function App() {
 
           {filteredAccounts.map((acc, renderIdx) => {
             const globalIdx = accounts.findIndex(a => a === acc);
-            const isVisible = !!visiblePasswords[globalIdx];
-
             return (
-              <div className="account-card glass-panel" key={globalIdx}>
-                <div className="account-card-header">
-                  <div className="account-info">
-                    <div className="account-type">
-                      <div className="type-icon">{getIconForType(acc.accountType)}</div>
-                      {acc.accountType}
-                    </div>
-                    <div className="account-username">{acc.username}</div>
-                  </div>
-                  <div className="account-actions">
-                    <button className="icon-btn" onClick={() => {
-                        setForm(acc);
-                        setEditingIndex(globalIdx);
-                        setShowModal(true);
-                      }} title="编辑"><Edit2 size={16} /></button>
-                    <button className="icon-btn" onClick={() => handleDelete(renderIdx)} title="删除"><Trash2 size={16} /></button>
-                  </div>
-                </div>
-
-                <div className="password-box">
-                  <span className={isVisible ? "password-visible" : "password-hidden"}>
-                    {isVisible ? acc.password : "••••••••"}
-                  </span>
-                  <div style={{ display: 'flex', gap: '4px' }}>
-                    <button className="icon-btn" onClick={() => setVisiblePasswords(p => ({ ...p, [globalIdx]: !p[globalIdx] }))} title={isVisible ? "隐藏" : "显示"}>
-                      {isVisible ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                    <button className="icon-btn" onClick={() => copyToClipboard(acc.password)} title="复制密码">
-                      <Copy size={16} />
-                    </button>
-                  </div>
-                </div>
-
-                {acc.remark && (
-                  <div 
-                    className={`account-remark ${expandedRemarks[globalIdx] ? '' : 'collapsed'}`}
-                    onClick={() => setExpandedRemarks(p => ({ ...p, [globalIdx]: !p[globalIdx] }))}
-                    title={expandedRemarks[globalIdx] ? "点击折叠" : "点击展开查看完整备注"}
-                  >
-                    {acc.remark}
-                  </div>
-                )}
-              </div>
+              <AccountCard 
+                 key={globalIdx} 
+                 acc={acc} 
+                 onEdit={() => {
+                   setForm(acc);
+                   setEditingIndex(globalIdx);
+                   setShowModal(true);
+                 }} 
+                 onDelete={() => handleDelete(renderIdx)} 
+                 copyToClipboard={copyToClipboard}
+              />
             );
           })}
         </div>
       </div>
-
-      {/* Modal for Add / Edit */}
-      {showModal && (
-        <div className="modal-backdrop">
-          <div className="modal-content glass-panel">
-            <div className="modal-header">
-              <h3>{editingIndex !== null ? '编辑凭证' : '添加新凭证'}</h3>
-              <button className="icon-btn" onClick={() => setShowModal(false)}><Plus size={24} style={{ transform: 'rotate(45deg)' }}/></button>
-            </div>
-            
-            <div className="flex-col">
-              <div className="form-group">
-                <label>类别 / 标签</label>
-                <input 
-                  placeholder="如: Github / 服务器 / 微信" 
-                  value={form.accountType} 
-                  onChange={e => setForm({...form, accountType: e.target.value})} 
-                  autoFocus
-                />
-              </div>
-              <div className="form-group">
-                <label>账号 / 用户名</label>
-                <input 
-                  placeholder="Username / Email" 
-                  value={form.username} 
-                  onChange={e => setForm({...form, username: e.target.value})} 
-                />
-              </div>
-              <div className="form-group">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-                  <label>密码</label>
-                  <span 
-                    style={{ fontSize: '12px', color: 'var(--accent)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
-                    onClick={async () => {
-                      const selTypes = [];
-                      if (genTypes.lower) selTypes.push("lower");
-                      if (genTypes.upper) selTypes.push("upper");
-                      if (genTypes.digit) selTypes.push("digit");
-                      if (genTypes.special) selTypes.push("special");
-                      if (selTypes.length === 0) return showAlert("至少得选择一种字符类型吧？");
-                      
-                      try {
-                        const pwd = await invoke<string>('generate_password_cmd', { length: 16, types: selTypes });
-                        setForm({...form, password: pwd});
-                        setVisiblePasswords(p => ({ ...p, [-1]: true })); // 自动显示明文以供查看
-                      } catch (e) {
-                        showAlert("生成失败: " + e);
-                      }
-                    }}
-                  >
-                    <Dices size={14} /> 根据下方选项生成
-                  </span>
-                </div>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <input 
-                    type={visiblePasswords[-1] ? "text" : "password"} 
-                    placeholder="Password" 
-                    value={form.password} 
-                    onChange={e => setForm({...form, password: e.target.value})} 
-                  />
-                  <button className="secondary" style={{ padding: '0 12px' }} onClick={() => setVisiblePasswords(p => ({ ...p, [-1]: !p[-1] }))}>
-                    {visiblePasswords[-1] ? <EyeOff size={18} /> : <Eye size={18} />}
-                  </button>
-                </div>
-                <div style={{ display: 'flex', gap: '12px', fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
-                    <input type="checkbox" checked={genTypes.upper} onChange={e => setGenTypes({...genTypes, upper: e.target.checked})} style={{ width: '13px', margin: 0 }}/> 大写
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
-                    <input type="checkbox" checked={genTypes.lower} onChange={e => setGenTypes({...genTypes, lower: e.target.checked})} style={{ width: '13px', margin: 0 }}/> 小写
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
-                    <input type="checkbox" checked={genTypes.digit} onChange={e => setGenTypes({...genTypes, digit: e.target.checked})} style={{ width: '13px', margin: 0 }}/> 数字
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}>
-                    <input type="checkbox" checked={genTypes.special} onChange={e => setGenTypes({...genTypes, special: e.target.checked})} style={{ width: '13px', margin: 0 }}/> 特殊符号
-                  </label>
-                </div>
-              </div>
-              <div className="form-group">
-                <label>备注描述 (可选)</label>
-                <textarea 
-                  placeholder="URL 或其他描述信息..." 
-                  value={form.remark} 
-                  onChange={e => setForm({...form, remark: e.target.value})} 
-                />
-              </div>
-
-              <div className="flex-row mt-4">
-                <button className="flex-1" onClick={handleSaveAccount}>保存凭证</button>
-                <button className="secondary flex-1" onClick={() => setShowModal(false)}>取消</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
