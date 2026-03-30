@@ -239,7 +239,7 @@ function App() {
             </div>
             {generatedPwd && (
                <button className="secondary" onClick={() => copyToClipboard(generatedPwd)} style={{ marginTop: '-8px' }}>
-                 <Copy size={16} /> 复制大密码
+                 <Copy size={16} /> 复制密码
                </button>
             )}
 
