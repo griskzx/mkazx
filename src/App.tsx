@@ -44,6 +44,9 @@ function App() {
   // 密码可见性管理
   const [visiblePasswords, setVisiblePasswords] = useState<Record<number, boolean>>({});
 
+  // 备注展开/折叠管理
+  const [expandedRemarks, setExpandedRemarks] = useState<Record<number, boolean>>({});
+
   // 初始化检查
   useEffect(() => {
     invoke<boolean>('is_vault_exists').then((exists) => {
@@ -407,7 +410,11 @@ function App() {
                 </div>
 
                 {acc.remark && (
-                  <div className="account-remark">
+                  <div 
+                    className={`account-remark ${expandedRemarks[globalIdx] ? '' : 'collapsed'}`}
+                    onClick={() => setExpandedRemarks(p => ({ ...p, [globalIdx]: !p[globalIdx] }))}
+                    title={expandedRemarks[globalIdx] ? "点击折叠" : "点击展开查看完整备注"}
+                  >
                     {acc.remark}
                   </div>
                 )}
