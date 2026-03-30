@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 ///定义账号结构体
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Account {
     pub account_type:String,
     pub username: String,
@@ -13,11 +14,13 @@ pub struct Account {
 
 ///保险箱结构体存储所有账号
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Vault{
     pub items:Vec<Account>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug,Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 ///加密后的保险箱结构体
 pub struct EncryptedVault{
     ///盐
@@ -96,4 +99,35 @@ pub fn load_vault(
     // 反序列化 Vault：bincode → postcard
     let vault: Vault = postcard::from_bytes(&plain_bytes)?;
     Ok(vault)
+}
+
+// ==================== 测试驼峰命名转换 ====================
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json;
+
+    #[test]
+    fn test_camel_case_serialization() {
+        let account = Account {
+            account_type: "微信".to_string(),
+            username: "wx_1990123".to_string(),
+            password: "MyStrongPass123!".to_string(),
+            remark: "常用聊天号".to_string(),
+        };
+
+        let vault = Vault {
+            items: vec![account],
+        };
+
+        let json = serde_json::to_string_pretty(&vault).unwrap();
+        
+        println!("=== 驼峰命名测试成功 ===");
+        println!("{}", json);
+        
+        // 验证关键字段
+        assert!(json.contains("\"accountType\""));
+        assert!(json.contains("\"username\""));
+        assert!(json.contains("\"password\""));
+    }
 }
