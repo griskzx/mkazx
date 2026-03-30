@@ -41,11 +41,14 @@ function App() {
   const [genTypes, setGenTypes] = useState({ lower: true, upper: true, digit: true, special: true });
   const [generatedPwd, setGeneratedPwd] = useState("");
 
-  // 密码可见性管理
+  // 密码可见性与备注展开管理
   const [visiblePasswords, setVisiblePasswords] = useState<Record<number, boolean>>({});
-
-  // 备注展开/折叠管理
   const [expandedRemarks, setExpandedRemarks] = useState<Record<number, boolean>>({});
+
+  // 全局对话框状态
+  const [dialog, setDialog] = useState<{show: boolean, type: 'alert' | 'confirm', message: string, onConfirm?: () => void}>({show: false, type: 'alert', message: ''});
+  const showAlert = (message: string) => setDialog({ show: true, type: 'alert', message });
+  const showConfirm = (message: string, onConfirm: () => void) => setDialog({ show: true, type: 'confirm', message, onConfirm });
 
   // 初始化检查
   useEffect(() => {
@@ -54,7 +57,7 @@ function App() {
     }).catch(console.error);
   }, []);
 
-  // 本地请求所有数据 (不再调用后端的 search_accounts，全靠前端本地高速过滤解决双词与(AND)的问题)
+  // 本地请求所有数据
   const fetchAccounts = async () => {
     if (!masterPassword) return;
     setLoading(true);
@@ -71,13 +74,11 @@ function App() {
 
   useEffect(() => {
     if (step === 'main') fetchAccounts();
-  }, [step]); // 解锁后只请求一次全量数据
+  }, [step]); 
 
   // 本地计算属性：根据分类与搜索实时过滤卡片
   const filteredAccounts = useMemo(() => {
     let list = accounts;
-    
-    // 侧边栏分类过滤
     if (activeCategory === 'web') {
       list = list.filter(a => {
         const t = a.accountType.toLowerCase();
@@ -90,7 +91,6 @@ function App() {
       });
     }
 
-    // 搜索框过滤（账户类型与用户名满足其一即可 -> OR 逻辑）
     if (searchQuery.trim() !== '') {
       const q = searchQuery.toLowerCase();
       list = list.filter(a => 
@@ -130,7 +130,7 @@ function App() {
   // CRUD
   const handleSaveAccount = async () => {
     if (!form.accountType || !form.username || !form.password) {
-      return alert("类型、账号和密码为必填项！");
+      return showAlert("类型、账号和密码为必填项！");
     }
     try {
       if (editingIndex !== null) {
@@ -140,25 +140,25 @@ function App() {
       }
       setShowModal(false);
       resetForm();
-      fetchAccounts(); // 重新拉取
+      fetchAccounts(); 
     } catch (e: any) {
-      alert('保存失败: ' + e);
+      showAlert('保存失败: ' + e);
     }
   };
 
-  const handleDelete = async (index: number) => {
-    // Note: To map filtered items back to real index, find index in original array
+  const handleDelete = (index: number) => {
     const realAcc = filteredAccounts[index];
     const realIndex = accounts.findIndex(a => a === realAcc);
     
     if (realIndex === -1) return;
-    if (!confirm('确定要删除这条凭证吗？此操作不可逆。')) return;
-    try {
-      await invoke('delete_account', { masterPassword, index: realIndex });
-      fetchAccounts();
-    } catch (e: any) {
-      alert('删除失败: ' + e);
-    }
+    showConfirm('确定要彻底删除这条凭证吗？此操作非常危险且不可逆。', async () => {
+      try {
+        await invoke('delete_account', { masterPassword, index: realIndex });
+        fetchAccounts();
+      } catch (e: any) {
+        showAlert('删除失败: ' + e);
+      }
+    });
   };
 
   // 生成密码
@@ -170,12 +170,12 @@ function App() {
       if (genTypes.digit) types.push("digit");
       if (genTypes.special) types.push("special");
       
-      if (types.length === 0) return alert("至少选择一种字符类型");
+      if (types.length === 0) return showAlert("至少得选择一种字符类型吧？");
       
       const pwd = await invoke<string>('generate_password_cmd', { length: genLength, types });
       setGeneratedPwd(pwd);
     } catch (e: any) {
-      alert("生成失败: " + e);
+      showAlert("生成失败: " + e);
     }
   };
 
@@ -192,6 +192,33 @@ function App() {
     } catch (e) {
       console.error(e);
     }
+  };
+
+  // =====================
+  // 自定义对话框组件
+  // =====================
+  const renderDialog = () => {
+    if (!dialog.show) return null;
+    return (
+      <div className="modal-backdrop" style={{ zIndex: 3000 }}>
+        <div className="modal-content glass-panel" style={{ width: '380px', padding: '30px 24px', textAlign: 'center' }}>
+          <div style={{ marginBottom: '24px', fontSize: '15px', color: 'var(--text-primary)', lineHeight: 1.5 }}>
+            {dialog.message}
+          </div>
+          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+            {dialog.type === 'confirm' && (
+              <button className="secondary flex-1" onClick={() => setDialog({ ...dialog, show: false })}>取消</button>
+            )}
+            <button className={dialog.type === 'confirm' ? "danger flex-1" : "flex-1"} onClick={() => {
+              setDialog({ ...dialog, show: false });
+              if (dialog.onConfirm) dialog.onConfirm();
+            }}>
+              确定
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   // =====================
@@ -256,10 +283,10 @@ function App() {
   if (step === 'setup' || step === 'unlock') {
     return (
       <div className="auth-container">
+        {renderDialog()}
         {renderGenModal()}
         {success && <div style={{ position: 'absolute', top: 30, background: 'var(--success)', color: '#fff', padding: '10px 20px', borderRadius: '8px' }}>{success}</div>}
         
-        {/* 未解锁时即可使用的生成器入口 */}
         <button 
            className="secondary" 
            style={{ position: 'absolute', top: 30, right: 30, background: 'var(--bg-card)' }}
@@ -312,6 +339,7 @@ function App() {
   // =====================
   return (
     <div className="dashboard-layout">
+      {renderDialog()}
       {renderGenModal()}
 
       {/* Sidebar */}
@@ -370,7 +398,6 @@ function App() {
           )}
 
           {filteredAccounts.map((acc, renderIdx) => {
-            // Fetch real index mapped to total accounts array for visibility toggle uniqueness
             const globalIdx = accounts.findIndex(a => a === acc);
             const isVisible = !!visiblePasswords[globalIdx];
 
@@ -387,7 +414,6 @@ function App() {
                   <div className="account-actions">
                     <button className="icon-btn" onClick={() => {
                         setForm(acc);
-                        // Save the real index matching the original raw array
                         setEditingIndex(globalIdx);
                         setShowModal(true);
                       }} title="编辑"><Edit2 size={16} /></button>
@@ -462,14 +488,14 @@ function App() {
                       if (genTypes.upper) selTypes.push("upper");
                       if (genTypes.digit) selTypes.push("digit");
                       if (genTypes.special) selTypes.push("special");
-                      if (selTypes.length === 0) return alert("至少选择一种字符类型");
+                      if (selTypes.length === 0) return showAlert("至少得选择一种字符类型吧？");
                       
                       try {
                         const pwd = await invoke<string>('generate_password_cmd', { length: 16, types: selTypes });
                         setForm({...form, password: pwd});
                         setVisiblePasswords(p => ({ ...p, [-1]: true })); // 自动显示明文以供查看
                       } catch (e) {
-                        alert("生成失败: " + e);
+                        showAlert("生成失败: " + e);
                       }
                     }}
                   >
