@@ -1,116 +1,97 @@
-// src/App.tsx
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { 
+  Lock, Unlock, ShieldCheck, Search, Plus, Key, 
+  Eye, EyeOff, Copy, Edit2, Trash2, Globe, Server, User, LayoutGrid
+} from 'lucide-react';
 import type { Account } from './types';
+
+// ========================
+// 辅助图标映射组件
+// ========================
+const getIconForType = (type: string) => {
+  const t = type.toLowerCase();
+  if (t.includes('web') || t.includes('http') || t.includes('网站')) return <Globe size={20} />;
+  if (t.includes('服务器') || t.includes('server') || t.includes('ssh')) return <Server size={20} />;
+  if (t.includes('qq') || t.includes('wx') || t.includes('wechat')) return <User size={20} />;
+  return <LayoutGrid size={20} />;
+};
 
 function App() {
   const [step, setStep] = useState<'setup' | 'unlock' | 'main'>('unlock');
   const [masterPassword, setMasterPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
-  // 主界面状态
+  // 账号相关
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [searchType, setSearchType] = useState('');
-  const [searchUsername, setSearchUsername] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // 添加/编辑模态框
+  // 弹窗状态
   const [showModal, setShowModal] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
-  const [form, setForm] = useState<Account>({
-    accountType: '',
-    username: '',
-    password: '',
-    remark: '',
-  });
+  const [form, setForm] = useState<Account>({ accountType: '', username: '', password: '', remark: '' });
 
-  // 检查是否已有 vault 文件
+  // 密码可见性管理 (key: index, value: boolean)
+  const [visiblePasswords, setVisiblePasswords] = useState<Record<number, boolean>>({});
+
+  // 检查是否已有 vault
   useEffect(() => {
     invoke<boolean>('is_vault_exists').then((exists) => {
       setStep(exists ? 'unlock' : 'setup');
     }).catch(console.error);
   }, []);
 
-  // 加载所有账号
-  const loadAllAccounts = async () => {
+  // 加载 / 搜索账号
+  const fetchAccounts = async (query?: string) => {
     if (!masterPassword) return;
     setLoading(true);
     setError('');
     try {
-      const vault = await invoke<{ items: Account[] }>('get_all_accounts', {
-        masterPassword,
-      });
-      setAccounts(vault.items);
-      setSearchType('');
-      setSearchUsername('');
+      if (query && query.trim() !== '') {
+        const result = await invoke<Account[]>('search_accounts', {
+          masterPassword,
+          accountType: query.trim(),
+          username: query.trim(),
+        });
+        setAccounts(result);
+      } else {
+        const vault = await invoke<{ items: Account[] }>('get_all_accounts', { masterPassword });
+        setAccounts(vault.items);
+      }
     } catch (e: any) {
-      setError(e.toString());
+      console.error(e);
+      // 如果搜索失败或者加载失败
     } finally {
       setLoading(false);
     }
   };
 
-  // 模糊搜索
-  const performSearch = async () => {
-    if (!masterPassword) return;
-    setLoading(true);
-    setError('');
-    try {
-      const result = await invoke<Account[]>('search_accounts', {
-        masterPassword,
-        accountType: searchType.trim() || undefined,
-        username: searchUsername.trim() || undefined,
-      });
-      setAccounts(result);
-    } catch (e: any) {
-      setError(e.toString());
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // 实时搜索（输入后 300ms 自动搜索）
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (step === 'main' && (searchType || searchUsername)) {
-        performSearch();
-      }
+      if (step === 'main') fetchAccounts(searchQuery);
     }, 300);
-
     return () => clearTimeout(timer);
-  }, [searchType, searchUsername, step, masterPassword]);
+  }, [searchQuery, step]);
 
-  // 进入主界面后自动加载账号
-  useEffect(() => {
-    if (step === 'main' && masterPassword) {
-      loadAllAccounts();
-    }
-  }, [step, masterPassword]);
-
-  // 设置主密码
-  const handleSetup = async () => {
-    if (masterPassword !== confirmPassword) {
-      setError("两次输入的主密码不一致");
-      return;
-    }
-    if (masterPassword.length < 8) {
-      setError("主密码至少需要 8 位");
-      return;
-    }
+  const handleSetup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (masterPassword !== confirmPassword) return setError('两次输入的密码不一致');
+    if (masterPassword.length < 8) return setError('主密码至少需要 8 位');
 
     try {
       await invoke('setup_master_password', { masterPassword, confirmPassword });
       setError('');
       setStep('main');
-      alert('主密码设置成功！');
     } catch (e: any) {
       setError(e.toString());
     }
   };
 
-  // 解锁
-  const handleUnlock = async () => {
+  const handleUnlock = async (e: React.FormEvent) => {
+    e.preventDefault();
     try {
       await invoke('unlock_vault', { masterPassword });
       setError('');
@@ -120,49 +101,32 @@ function App() {
     }
   };
 
-  // 添加账号
-  const addAccount = async () => {
+  const handleSaveAccount = async () => {
+    if (!form.accountType || !form.username || !form.password) {
+      return alert("类型、账号和密码为必填项！");
+    }
+    
     try {
-      const vault = await invoke<{ items: Account[] }>('add_account', {
-        masterPassword,
-        newAccount: form,
-      });
-      setAccounts(vault.items);
+      if (editingIndex !== null) {
+        await invoke('update_account', { masterPassword, index: editingIndex, updatedAccount: form });
+      } else {
+        await invoke('add_account', { masterPassword, newAccount: form });
+      }
       setShowModal(false);
       resetForm();
+      fetchAccounts(searchQuery);
     } catch (e: any) {
-      alert('添加失败：' + e);
+      alert('保存失败: ' + e);
     }
   };
 
-  // 更新账号
-  const updateAccount = async () => {
-    if (editingIndex === null) return;
+  const handleDelete = async (index: number) => {
+    if (!confirm('确定要删除这条凭证吗？此操作不可逆。')) return;
     try {
-      const vault = await invoke<{ items: Account[] }>('update_account', {
-        masterPassword,
-        index: editingIndex,
-        updatedAccount: form,
-      });
-      setAccounts(vault.items);
-      setShowModal(false);
-      resetForm();
+      await invoke('delete_account', { masterPassword, index });
+      fetchAccounts(searchQuery);
     } catch (e: any) {
-      alert('更新失败：' + e);
-    }
-  };
-
-  // 删除账号
-  const deleteAccount = async (index: number) => {
-    if (!confirm('确定要删除这条记录吗？')) return;
-    try {
-      const vault = await invoke<{ items: Account[] }>('delete_account', {
-        masterPassword,
-        index,
-      });
-      setAccounts(vault.items);
-    } catch (e: any) {
-      alert('删除失败：' + e);
+      alert('删除失败: ' + e);
     }
   };
 
@@ -171,153 +135,231 @@ function App() {
     setEditingIndex(null);
   };
 
+  const openAdd = () => {
+    resetForm();
+    setShowModal(true);
+  };
+
   const openEdit = (acc: Account, index: number) => {
     setForm(acc);
     setEditingIndex(index);
     setShowModal(true);
   };
 
-  return (
-    <div style={{ padding: '20px', maxWidth: '900px', margin: '0 auto', fontFamily: 'system-ui, sans-serif' }}>
-      <h1>🔐 mkazx 密码管理器</h1>
+  const togglePassword = (idx: number) => {
+    setVisiblePasswords(prev => ({ ...prev, [idx]: !prev[idx] }));
+  };
 
-      {/* 设置主密码界面 */}
-      {step === 'setup' && (
-        <div style={{ background: '#f8f9fa', padding: '30px', borderRadius: '12px' }}>
-          <h2>首次使用，请设置主密码</h2>
-          <p>主密码用于加密所有数据，请务必牢记</p>
-          <input
-            type="password"
-            placeholder="输入主密码（至少8位）"
-            value={masterPassword}
-            onChange={(e) => setMasterPassword(e.target.value)}
-            style={{ display: 'block', margin: '10px 0', width: '300px', padding: '8px' }}
-          />
-          <input
-            type="password"
-            placeholder="再次确认主密码"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            style={{ display: 'block', margin: '10px 0', width: '300px', padding: '8px' }}
-          />
-          <button onClick={handleSetup}>创建主密码</button>
-          {error && <p style={{ color: 'red' }}>{error}</p>}
-        </div>
-      )}
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setSuccess("已复制到剪贴板");
+      setTimeout(() => setSuccess(""), 2000);
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
-      {/* 解锁界面 */}
-      {step === 'unlock' && (
-        <div style={{ background: '#f8f9fa', padding: '30px', borderRadius: '12px' }}>
-          <h2>输入主密码解锁</h2>
-          <input
-            type="password"
-            placeholder="请输入主密码"
-            value={masterPassword}
-            onChange={(e) => setMasterPassword(e.target.value)}
-            style={{ display: 'block', margin: '10px 0', width: '300px', padding: '8px' }}
-          />
-          <button onClick={handleUnlock}>解锁保险箱</button>
-          {error && <p style={{ color: 'red' }}>{error}</p>}
-        </div>
-      )}
-
-      {/* 主管理界面 */}
-      {step === 'main' && (
-        <div>
-          <h2>账号管理（已解锁）</h2>
-
-          <div style={{ marginBottom: '15px' }}>
-            <input
-              placeholder="按账号类型模糊搜索（如 qq、git）"
-              value={searchType}
-              onChange={(e) => setSearchType(e.target.value)}
-              style={{ marginRight: '10px', padding: '8px', width: '220px' }}
-            />
-            <input
-              placeholder="按用户名模糊搜索"
-              value={searchUsername}
-              onChange={(e) => setSearchUsername(e.target.value)}
-              style={{ marginRight: '10px', padding: '8px', width: '220px' }}
-            />
-            <button onClick={loadAllAccounts}>显示全部</button>
+  // =====================
+  // 渲染 Auth 界面
+  // =====================
+  if (step === 'setup' || step === 'unlock') {
+    return (
+      <div className="auth-container">
+        <div className="auth-bg-glow" />
+        <div className="auth-card glass-panel">
+          <div className="auth-icon">
+            {step === 'setup' ? <ShieldCheck size={32} /> : <Lock size={32} />}
           </div>
-
-          {loading && <p>加载中...</p>}
-          {error && <p style={{ color: 'red' }}>{error}</p>}
-
-          <button onClick={() => { setShowModal(true); resetForm(); }} style={{ marginBottom: '15px' }}>
-            + 添加新账号
-          </button>
-
-          <div>
-            {accounts.length === 0 ? (
-              <p>暂无账号或没有找到匹配项</p>
-            ) : (
-              accounts.map((acc, index) => (
-                <div key={index} style={{ border: '1px solid #ddd', padding: '15px', margin: '10px 0', borderRadius: '8px' }}>
-                  <strong>{acc.accountType}</strong> — {acc.username}
-                  <br />
-                  密码: {acc.password}
-                  <br />
-                  备注: {acc.remark || '无'}
-                  <br /><br />
-                  <button onClick={() => openEdit(acc, index)}>编辑</button>
-                  <button onClick={() => deleteAccount(index)} style={{ marginLeft: '10px', color: 'red' }}>删除</button>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* 添加 / 编辑模态框 */}
-      {showModal && (
-        <div style={{
-          position: 'fixed',
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)',
-          background: 'white',
-          padding: '25px',
-          border: '2px solid #333',
-          borderRadius: '10px',
-          zIndex: 1000,
-          minWidth: '400px'
-        }}>
-          <h3>{editingIndex !== null ? '编辑账号' : '添加新账号'}</h3>
+          <h1 className="auth-title">
+            {step === 'setup' ? '初始化保险箱' : '解锁 mkazx'}
+          </h1>
+          <p className="auth-subtitle">
+            {step === 'setup' ? '设置强主密码以加密您的所有凭证数据' : '请输入您的主密码进行验证'}
+          </p>
           
-          <input
-            placeholder="账号类型（如 QQ、GitHub）"
-            value={form.accountType}
-            onChange={(e) => setForm({ ...form, accountType: e.target.value })}
-            style={{ display: 'block', margin: '10px 0', width: '100%', padding: '8px' }}
-          />
-          <input
-            placeholder="用户名 / 账号"
-            value={form.username}
-            onChange={(e) => setForm({ ...form, username: e.target.value })}
-            style={{ display: 'block', margin: '10px 0', width: '100%', padding: '8px' }}
-          />
-          <input
-            placeholder="密码"
-            value={form.password}
-            onChange={(e) => setForm({ ...form, password: e.target.value })}
-            style={{ display: 'block', margin: '10px 0', width: '100%', padding: '8px' }}
-          />
-          <textarea
-            placeholder="备注（可选）"
-            value={form.remark}
-            onChange={(e) => setForm({ ...form, remark: e.target.value })}
-            style={{ display: 'block', margin: '10px 0', width: '100%', padding: '8px', minHeight: '60px' }}
-          />
+          <form onSubmit={step === 'setup' ? handleSetup : handleUnlock} className="flex-col">
+            <input
+              type="password"
+              placeholder="主密码"
+              value={masterPassword}
+              onChange={(e) => setMasterPassword(e.target.value)}
+              autoFocus
+            />
+            {step === 'setup' && (
+              <input
+                type="password"
+                placeholder="确认主密码"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+              />
+            )}
+            <button type="submit" style={{ width: '100%', marginTop: '8px' }}>
+              {step === 'setup' ? '初始化并加密' : '解密本地保险箱'}
+              {step === 'unlock' && <Unlock size={16} />}
+            </button>
+            {error && <div className="text-danger">{error}</div>}
+          </form>
+        </div>
+      </div>
+    );
+  }
 
-          <div style={{ marginTop: '15px' }}>
-            <button onClick={editingIndex !== null ? updateAccount : addAccount}>
-              {editingIndex !== null ? '保存修改' : '添加账号'}
+  // =====================
+  // 渲染 Dashboard 界面
+  // =====================
+  return (
+    <div className="dashboard-layout">
+      {/* Sidebar */}
+      <div className="sidebar">
+        <div className="sidebar-header">
+          <ShieldCheck size={24} color="var(--accent)" />
+          <span>mkazx Vault</span>
+        </div>
+        <div className="sidebar-content">
+          <div className="nav-item active">
+            <Key size={18} /> 全部凭证
+          </div>
+          <div className="nav-item">
+            <Globe size={18} /> 网站登录
+          </div>
+          <div className="nav-item">
+            <Server size={18} /> 服务器/SSH
+          </div>
+        </div>
+        <div className="sidebar-footer">
+          <button className="secondary" style={{ width: '100%' }} onClick={() => setStep('unlock')}>
+             锁定并退出
+          </button>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="main-content">
+        <div className="header">
+          <div className="search-bar">
+            <Search size={18} color="var(--text-secondary)" />
+            <input 
+              type="text" 
+              placeholder="搜索账号或类型..." 
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+          <div className="header-actions">
+            {success && <span className="text-success" style={{ margin: 0 }}>{success}</span>}
+            <button onClick={openAdd}>
+              <Plus size={18} /> 添加凭证
             </button>
-            <button onClick={() => { setShowModal(false); resetForm(); }} style={{ marginLeft: '10px' }}>
-              取消
-            </button>
+          </div>
+        </div>
+
+        <div className="accounts-grid">
+          {accounts.length === 0 && !loading && (
+            <div className="empty-state">
+              <Search />
+              <p>没有找到任何记录，点击右上角添加。</p>
+            </div>
+          )}
+
+          {accounts.map((acc, idx) => {
+            const isVisible = !!visiblePasswords[idx];
+            return (
+              <div className="account-card glass-panel" key={idx}>
+                <div className="account-card-header">
+                  <div className="account-info">
+                    <div className="account-type">
+                      <div className="type-icon">{getIconForType(acc.accountType)}</div>
+                      {acc.accountType}
+                    </div>
+                    <div className="account-username">{acc.username}</div>
+                  </div>
+                  <div className="account-actions">
+                    <button className="icon-btn" onClick={() => openEdit(acc, idx)} title="编辑"><Edit2 size={16} /></button>
+                    <button className="icon-btn" onClick={() => handleDelete(idx)} title="删除"><Trash2 size={16} /></button>
+                  </div>
+                </div>
+
+                <div className="password-box">
+                  <span className={isVisible ? "password-visible" : "password-hidden"}>
+                    {isVisible ? acc.password : "••••••••"}
+                  </span>
+                  <div style={{ display: 'flex', gap: '4px' }}>
+                    <button className="icon-btn" onClick={() => togglePassword(idx)} title={isVisible ? "隐藏" : "显示"}>
+                      {isVisible ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                    <button className="icon-btn" onClick={() => copyToClipboard(acc.password)} title="复制密码">
+                      <Copy size={16} />
+                    </button>
+                  </div>
+                </div>
+
+                {acc.remark && (
+                  <div className="account-remark">
+                    {acc.remark}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Modal for Add / Edit */}
+      {showModal && (
+        <div className="modal-backdrop">
+          <div className="modal-content glass-panel">
+            <div className="modal-header">
+              <h3>{editingIndex !== null ? '编辑凭证' : '添加新凭证'}</h3>
+              <button className="icon-btn" onClick={() => setShowModal(false)}><Plus size={24} style={{ transform: 'rotate(45deg)' }}/></button>
+            </div>
+            
+            <div className="flex-col">
+              <div className="form-group">
+                <label>类别 / 标签</label>
+                <input 
+                  placeholder="如: Github / 服务器 / 微信" 
+                  value={form.accountType} 
+                  onChange={e => setForm({...form, accountType: e.target.value})} 
+                  autoFocus
+                />
+              </div>
+              <div className="form-group">
+                <label>账号 / 用户名</label>
+                <input 
+                  placeholder="Username / Email" 
+                  value={form.username} 
+                  onChange={e => setForm({...form, username: e.target.value})} 
+                />
+              </div>
+              <div className="form-group">
+                <label>密码</label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input 
+                    type={visiblePasswords[-1] ? "text" : "password"} 
+                    placeholder="Password" 
+                    value={form.password} 
+                    onChange={e => setForm({...form, password: e.target.value})} 
+                  />
+                  <button className="secondary" style={{ padding: '0 12px' }} onClick={() => togglePassword(-1)}>
+                    {visiblePasswords[-1] ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
+              </div>
+              <div className="form-group">
+                <label>备注描述 (可选)</label>
+                <textarea 
+                  placeholder="URL 或其他描述信息..." 
+                  value={form.remark} 
+                  onChange={e => setForm({...form, remark: e.target.value})} 
+                />
+              </div>
+
+              <div className="flex-row mt-4">
+                <button className="flex-1" onClick={handleSaveAccount}>保存凭证</button>
+                <button className="secondary flex-1" onClick={() => setShowModal(false)}>取消</button>
+              </div>
+            </div>
           </div>
         </div>
       )}
