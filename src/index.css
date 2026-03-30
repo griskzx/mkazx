@@ -411,6 +411,7 @@ textarea {
 .account-remark.collapsed {
   display: -webkit-box;
   -webkit-line-clamp: 1; /* 限制只显示 1 行 */
+  line-clamp: 1;
   -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
