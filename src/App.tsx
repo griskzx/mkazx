@@ -350,21 +350,21 @@ function App() {
         </div>
         <div className="sidebar-content">
           <div className={`nav-item ${activeCategory === 'all' ? 'active' : ''}`} onClick={() => setActiveCategory('all')}>
-            <Key size={18} /> 全部凭证
+            <Key size={18} /> <span className="responsive-text">全部凭证</span>
           </div>
           <div className={`nav-item ${activeCategory === 'web' ? 'active' : ''}`} onClick={() => setActiveCategory('web')}>
-            <Globe size={18} /> 网站登录
+            <Globe size={18} /> <span className="responsive-text">网站登录</span>
           </div>
           <div className={`nav-item ${activeCategory === 'server' ? 'active' : ''}`} onClick={() => setActiveCategory('server')}>
-            <Server size={18} /> 服务器/SSH
+            <Server size={18} /> <span className="responsive-text">服务器/SSH</span>
           </div>
         </div>
         <div className="sidebar-footer" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <button className="secondary" style={{ width: '100%' }} onClick={() => { setGeneratedPwd(""); setShowGenModal(true); }}>
-             <Dices size={18} /> 生成密码
+             <Dices size={18} /> <span className="responsive-text">生成密码</span>
           </button>
           <button className="secondary" style={{ width: '100%', borderColor: 'transparent', color: 'var(--text-secondary)' }} onClick={() => setStep('unlock')}>
-             锁定并退出
+             <Lock size={18} /> <span className="responsive-text">锁定并退出</span>
           </button>
         </div>
       </div>
@@ -384,7 +384,7 @@ function App() {
           <div className="header-actions">
             {success && <span className="text-success" style={{ margin: 0 }}>{success}</span>}
             <button onClick={() => { resetForm(); setShowModal(true); }}>
-              <Plus size={18} /> 添加凭证
+              <Plus size={18} /> <span className="responsive-text">添加凭证</span>
             </button>
           </div>
         </div>

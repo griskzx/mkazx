@@ -465,3 +465,50 @@ textarea {
 .flex-1 { flex: 1; }
 .mt-4 { margin-top: 16px; }
 .mt-6 { margin-top: 24px; }
+
+/* 响应式调整 (Responsive layout for narrow screen) */
+@media (max-width: 800px) {
+  .sidebar {
+    width: 80px;
+    align-items: center;
+  }
+  .sidebar-header {
+    padding: 24px 0;
+    justify-content: center;
+  }
+  .sidebar-header span {
+    display: none;
+  }
+  .nav-item {
+    justify-content: center;
+    padding: 12px;
+  }
+  .responsive-text {
+    display: none;
+  }
+  .sidebar-footer {
+    width: 100%;
+    align-items: center;
+    padding: 20px 10px;
+  }
+  .sidebar-footer button {
+    justify-content: center;
+    padding: 10px;
+  }
+  .header {
+    padding: 0 20px;
+  }
+  .header-actions button {
+    padding: 10px;
+  }
+  .search-bar {
+    width: auto;
+    flex: 1;
+    margin-right: 16px;
+  }
+  .accounts-grid {
+    padding: 20px;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  }
+}
+
