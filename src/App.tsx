@@ -452,7 +452,23 @@ function App() {
                 />
               </div>
               <div className="form-group">
-                <label>密码</label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'bottom' }}>
+                  <label>密码</label>
+                  <span 
+                    style={{ fontSize: '12px', color: 'var(--accent)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                    onClick={async () => {
+                      try {
+                        const pwd = await invoke<string>('generate_password_cmd', { length: 16, types: ["lower", "upper", "digit", "special"] });
+                        setForm({...form, password: pwd});
+                        setVisiblePasswords(p => ({ ...p, [-1]: true })); // 自动显示明文以供查看
+                      } catch (e) {
+                        alert("生成失败: " + e);
+                      }
+                    }}
+                  >
+                    <Dices size={14} /> 生成随机密码
+                  </span>
+                </div>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <input 
                     type={visiblePasswords[-1] ? "text" : "password"} 
