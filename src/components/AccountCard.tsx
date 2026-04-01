@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Eye, EyeOff, Copy, Edit2, Trash2, Globe, Server, User, LayoutGrid } from 'lucide-react';
 import type { Account } from '../types';
 

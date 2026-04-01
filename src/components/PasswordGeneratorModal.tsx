@@ -1,4 +1,3 @@
-import React from 'react';
 import { Plus, Copy, Dices } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 

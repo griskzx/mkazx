@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Plus, Eye, EyeOff, Dices } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import type { Account } from '../types';
